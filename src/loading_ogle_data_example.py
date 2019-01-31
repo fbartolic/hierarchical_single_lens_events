@@ -12,4 +12,3 @@ fig, ax = plt.subplots()
 event.plot(ax)
 plt.show()
 
-event.convert_to_fluxes()
