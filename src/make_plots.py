@@ -200,6 +200,7 @@ for entry in os.scandir('output'):
 
         # Trace in dataframe format
         df = pm.trace_to_dataframe(trace_standard)
+        df.to_csv(output_dir + 'data.csv')
 
         DeltaF.append(df['DeltaF'].median())
         Fb.append(df['Fb'].median())

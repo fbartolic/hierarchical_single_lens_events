@@ -85,7 +85,6 @@ class PointSourcePointLens(pm.Model):
             BoundedNormal1.dist( mu=1., sd=2.).logp(self.K))
         self.log_posterior = pm.Deterministic("log_posterior", self.logpt)
 
-
         Y_obs = pm.Normal('Y_obs', mu=self.mean_function(), sd=self.K*self.sigF, 
             observed=self.F, shape=len(self.F))
 

@@ -25,7 +25,7 @@ for directory in os.listdir(data_path):
 
 random.shuffle(dirs)
 i = 0
-n_events = 50
+n_events = 200
 for directory in dirs:
     if (i < n_events):
         event = OGLEData(data_path + directory)
@@ -58,15 +58,18 @@ for event in events:
             print(RV.name, RV.logp(model_standard.test_point))
 
     with model_standard:
-        burnin = sampler.tune(tune=2000,
-                                step_kwargs=dict(target_accept=0.9))
+        burnin = sampler.tune(tune=500)
 
     with model_standard:
-        trace_standard = sampler.sample(draws=2000)
+        trace_standard = sampler.sample(draws=1000)
 
     # Save posterior samples
     pm.save_trace(trace_standard, output_dir_standard + '/model.trace',
         overwrite=True)
+
+    # Trace in dataframe format
+    df = pm.trace_to_dataframe(trace_standard)
+    df.to_csv(trace_standard, output_dir_standard + '/data.csv',)
 
     # Save output stats to file
     def save_summary_stats(trace, output_dir):
