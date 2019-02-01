@@ -37,41 +37,43 @@ class PointSourcePointLens(pm.Model):
         self.F = df['I_flux'].values
         self.sigF = df['I_flux_err'].values
 
-        # Custom prior distributions 
-        BoundedNormal = pm.Bound(pm.Normal, lower=0.0) # DeltaF is positive
-        BoundedNormal1 = pm.Bound(pm.Normal, lower=1.) 
-
         # Microlensing model parameters
-        self.DeltaF = BoundedNormal('DeltaF', mu=np.max(self.F), sd=1., testval=3.)
-        self.Fb = pm.Normal('Fb', mu=0., sd=0.1, testval=0.)
+        self.ln_DeltaF = pm.DensityDist('DeltaF', self.prior_ln_DeltaF, testval=3.)
+        self.Fb = pm.DensityDist('Fb', self.prior_Fb, testval=0.)
         # Posterior is multi-modal in t0 and it's critical that the it is 
         # initialized near the true value
         t0_guess_idx = (np.abs(self.F - np.max(self.F))).argmin() 
-        self.t0 = pm.Uniform('t0', self.t[0], self.t[-1], 
+        self.ln_t0 = pm.DensityDist('ln_t0', self.prior_ln_t0,
             testval=self.t[t0_guess_idx])
-        if (use_joint_prior==False):
-            self.u0 = BoundedNormal('u0', mu=0., sd=1., testval=0.5)
-            self.tE = BoundedNormal('tE', mu=0., sd=600., testval=20.)
-        else:
-            self.ln_teff_ln_tE = pm.DensityDist('ln_teff_ln_tE', 
-                self.joint_density, shape=2, 
-                testval = [np.log(10), np.log(20.)]) # p(ln_teff,ln_tE)
-
-            # Deterministic transformations
-            self.tE = pm.Deterministic("tE", T.exp(self.ln_teff_ln_tE[1]))
-            self.u0 = pm.Deterministic("u0", 
-                T.exp(self.ln_teff_ln_tE[0])/self.tE) 
-
+        self.ln_u0 = pm.DensityDist('ln_u0', self.prior_ln_u0, testval=0.)
+        self.ln_tE = pm.DensityDist('ln_tE', self.prior_ln_tE, testval=20.)
+        
         # Save source flux and blend parameters
-        m_source, m_blend = self.revert_flux_params_to_nonstandardized_format(
-            data)
-        self.mag_source = pm.Deterministic("m_source", m_source)
-        self.mag_blend = pm.Deterministic("m_blend", m_blend)
+        #m_source, m_blend = self.revert_flux_params_to_nonstandardized_format(
+        #    data)
+        #self.mag_source = pm.Deterministic("m_source", m_source)
+        #self.mag_blend = pm.Deterministic("m_blend", m_blend)
 
         # Noise model parameters
-        self.K = BoundedNormal1('K', mu=1., sd=2., testval=1.5)
+        self.K = pm.DensityDist('K', prior_ln_K, testval=1.5)
 
-        Y_obs = pm.Normal('Y_obs', mu=self.mean_function(), sd=self.K*self.sigF, 
+        # Save the logp for all of the priors
+        self.logp_DeltaF = pm.Deterministic("logp_ln_DeltaF", 
+            self.prior_DeltaF(self.DeltaF))
+        self.logp_Fb = pm.Deterministic("logp_Fb", self.prior_Fb(self.Fb))
+        self.logp_ln_t0 = pm.Deterministic("logp_ln_t0", 
+            self.prior_ln_t0(self.ln_t0))
+        self.logp_ln_u0 = pm.Deterministic("logp_ln_u0", 
+            self.prior_ln_u0(self.ln_u0))
+        self.logp_ln_tE = pm.Deterministic("logp_ln_tE", 
+            self.prior_ln_tE(self.ln_tE))
+        self.logp_ln_K = pm.Deterministic("logp_ln_K", 
+            self.prior_ln_K(self.ln_K))
+
+        # Save log posterior value
+        self.log_posterior = pm.Deterministic("log_posterior", self.logp)
+
+        Y_obs = pm.Normal('Y_obs', mu=self.mean_function(), sd=(self.K + 1)*self.sigF, 
             observed=self.F, shape=len(self.F))
 
     def revert_flux_params_to_nonstandardized_format(self, data):
@@ -95,10 +97,14 @@ class PointSourcePointLens(pm.Model):
 
     def mean_function(self):
         """PSPL model"""
-        u = T.sqrt(self.u0**2 + ((self.t - self.t0)/self.tE)**2)
+        u0 = T.exp(self.ln_u0)
+        t0 = T.exp(self.ln_t0)
+        tE = T.exp(self.ln_tE)
+        DeltaF = T.exp(self.ln_DeltaF)
+        u = T.sqrt(u0**2 + ((self.t - t0)/tE)**2)
         A = lambda u: (u**2 + 2)/(u*T.sqrt(u**2 + 4))
 
-        return self.DeltaF*(A(u) - 1)/(A(self.u0) - 1) + self.Fb
+        return DeltaF*(A(u) - 1)/(A(u0) - 1) + self.Fb
 
     def peak_mag(self):
         """PSPL model"""
@@ -106,13 +112,48 @@ class PointSourcePointLens(pm.Model):
         A = lambda u: (u**2 + 2)/(u*T.sqrt(u**2 + 4))
 
         return A(self.u0)
+    
+    def prior_ln_DeltaF(self, value):
+        ln_DeltaF = T.cast(value, 'float64')
 
-    def joint_density(self, value):
-        teff = T.cast(T.exp(value[0]), 'float64')
-        tE = T.cast(T.exp(value[1]), 'float64')
-        sig_tE = T.cast(365., 'float64') # p(tE)~N(0, 600)
-        sig_u0 = T.cast(1., 'float64') # p(u0)~N(0, 1)
+        # Gaussian prior
+        mu = 0.
+        sig = np.log(10)
 
-        return -T.log(tE) - (teff/tE)**2/sig_u0**2 - tE**2/sig_tE**2 +\
-            value[0] + value[1]
+        return -0.5*T.log(2*np.pi*sig**2) - 0.5*(ln_DeltaF - mu)**2/sig**2
 
+    def prior_Fb(self, value):
+        Fb = T.cast(value, 'float64')
+
+        # Gaussian prior
+        mu = 0.
+        sig = np.log(50)
+
+        return -0.5*T.log(2*np.pi*sig**2) - 0.5*(Fb - mu)**2/sig**2
+
+    def prior_ln_t0(self, value):
+        ln_t0 = T.cast(value, 'float64')
+
+        # Gaussian prior
+        mu = self.t[0] + (self.t[-1] - self.t[0])/2
+        sig = (self.t[-1] - self.t[0])/2
+
+        return -0.5*T.log(2*np.pi*sig**2) - 0.5*(ln_t0 - mu)**2/sig**2
+
+    def prior_ln_u0(self, value):
+        ln_u0 = T.cast(value, 'float64')
+
+        # Gaussian prior
+        mu = 0.
+        sig = np.log(1.2)
+
+        return -0.5*T.log(2*np.pi*sig**2) - 0.5*(ln_u0 - mu)**2/sig**2
+    
+    def prior_ln_K(self, value):
+        ln_K = T.cast(value, 'float64')
+
+        # Prior
+        mu = 0.
+        sig = np.log(2)
+
+        return -0.5*T.log(2*np.pi*sig**2) - 0.5*(ln_K - mu)**2/sig**2
