@@ -14,12 +14,11 @@ import exoplanet as xo
 
 mpl.rc('text', usetex=False)
 
-data_path = '/home/fran/data/OGLE_ews/2017/'
 random.seed(42)
 
 events = []  # data for each event
 
-data_path = '/home/fran/data/OGLE_ews/2017/'
+data_path = '/Users/golovich1/research/immacho/hierarchical_single_lens_events/data/rsync_data/2018/'
 dirs = []
 for directory in os.listdir(data_path):
     dirs.append(directory)
