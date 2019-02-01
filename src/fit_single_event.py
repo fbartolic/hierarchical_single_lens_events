@@ -18,7 +18,7 @@ random.seed(42)
 
 events = []  # data for each event
 
-data_path = '/Users/golovich1/research/immacho/hierarchical_single_lens_events/data/rsync_data/2018/'
+data_path = '/home/fran/data/OGLE_ews/2017/'
 dirs = []
 for directory in os.listdir(data_path):
     dirs.append(directory)
@@ -47,7 +47,7 @@ for event in events:
    # plt.savefig('output/' + event.event_name + '/data.pdf')
 
     # Fit a model
-    model1 = PointSourcePointLens(event, use_joint_prior=True)
+    model1 = PointSourcePointLens(event, use_joint_prior=False)
 
     # Sample models with NUTS
     sampler = xo.PyMC3Sampler(window=100, start=200, finish=200)
