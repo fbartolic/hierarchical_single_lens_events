@@ -166,6 +166,13 @@ events = [] # event names
 lightcurves = [] # data for each event
 data_path = '/home/fran/data/OGLE_ews/2017/'
 
+DeltaF_medians = []
+Fb_medians = []
+t0_medians = []
+u0_medians = []
+tE_medians = []
+K_medians = []
+
 # Iterate over events, load data, and make plots 
 for entry in os.scandir('output'):
     if entry.is_dir():
@@ -193,3 +200,13 @@ for entry in os.scandir('output'):
 
         # Trace in dataframe format
         df = pm.trace_to_dataframe(trace_standard)
+
+        DeltaF.append(df['DeltaF'].median())
+        Fb.append(df['Fb'].median())
+        t0.append(df['t0'].median())
+        u0.append(df['u0'].median())
+        tE.append(df['tE'].median())
+        K.append(df['K'].median())
+
+    # Save medians of samples
+    np.save('output/DeltaF_medians.npy', DeltaF)
