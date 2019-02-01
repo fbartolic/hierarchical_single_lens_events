@@ -38,15 +38,15 @@ class PointSourcePointLens(pm.Model):
         self.sigF = df['I_flux_err'].values
 
         # Microlensing model parameters
-        self.ln_DeltaF = pm.DensityDist('DeltaF', self.prior_ln_DeltaF, testval=3.)
-        self.Fb = pm.DensityDist('Fb', self.prior_Fb, testval=0.)
+        self.ln_DeltaF = pm.DensityDist('DeltaF', self.prior_ln_DeltaF, testval=np.log(5))
+        self.Fb = pm.DensityDist('Fb', self.prior_Fb, testval=0.1)
         # Posterior is multi-modal in t0 and it's critical that the it is 
         # initialized near the true value
         t0_guess_idx = (np.abs(self.F - np.max(self.F))).argmin() 
         self.ln_t0 = pm.DensityDist('ln_t0', self.prior_ln_t0,
-            testval=self.t[t0_guess_idx])
-        self.ln_u0 = pm.DensityDist('ln_u0', self.prior_ln_u0, testval=0.)
-        self.ln_tE = pm.DensityDist('ln_tE', self.prior_ln_tE, testval=20.)
+            testval=T.log(self.t[t0_guess_idx]))
+        self.ln_u0 = pm.DensityDist('ln_u0', self.prior_ln_u0, testval=np.log(2))
+        self.ln_tE = pm.DensityDist('ln_tE', self.prior_ln_tE, testval=np.log(100))
         
         # Save source flux and blend parameters
         #m_source, m_blend = self.revert_flux_params_to_nonstandardized_format(
@@ -55,11 +55,11 @@ class PointSourcePointLens(pm.Model):
         #self.mag_blend = pm.Deterministic("m_blend", m_blend)
 
         # Noise model parameters
-        self.K = pm.DensityDist('K', prior_ln_K, testval=1.5)
+        self.ln_K = pm.DensityDist('ln_K', self.prior_ln_K, testval=np.log(1.2))
 
         # Save the logp for all of the priors
         self.logp_DeltaF = pm.Deterministic("logp_ln_DeltaF", 
-            self.prior_DeltaF(self.DeltaF))
+            self.prior_ln_DeltaF(self.DeltaF))
         self.logp_Fb = pm.Deterministic("logp_Fb", self.prior_Fb(self.Fb))
         self.logp_ln_t0 = pm.Deterministic("logp_ln_t0", 
             self.prior_ln_t0(self.ln_t0))
@@ -71,9 +71,12 @@ class PointSourcePointLens(pm.Model):
             self.prior_ln_K(self.ln_K))
 
         # Save log posterior value
-        self.log_posterior = pm.Deterministic("log_posterior", self.logp)
+        self.log_posterior = pm.Deterministic("log_posterior", self.logpt)
 
-        Y_obs = pm.Normal('Y_obs', mu=self.mean_function(), sd=(self.K + 1)*self.sigF, 
+        #test = T.printing.Print('sd')(t0)
+
+        Y_obs = pm.Normal('Y_obs', mu=self.mean_function(), 
+            sd=((T.exp(self.ln_K) + 1))*self.sigF, 
             observed=self.F, shape=len(self.F))
 
     def revert_flux_params_to_nonstandardized_format(self, data):
@@ -94,6 +97,15 @@ class PointSourcePointLens(pm.Model):
         mag_source, mag_blend = mu_m
 
         return mag_source, mag_blend
+    
+    def log_likelihood(self):
+        """Gaussian log likelihood."""
+        # Gaussian prior
+        mu = self.mean_function()
+        sig = (T.exp(self.ln_K) + 1.)*self.sigF
+
+        res = T.sum(-0.5*T.log(2*np.pi*sig**2) - 0.5*(self.F - mu)**2/sig**2, axis=0)
+        return res
 
     def mean_function(self):
         """PSPL model"""
@@ -112,7 +124,7 @@ class PointSourcePointLens(pm.Model):
         A = lambda u: (u**2 + 2)/(u*T.sqrt(u**2 + 4))
 
         return A(self.u0)
-    
+
     def prior_ln_DeltaF(self, value):
         ln_DeltaF = T.cast(value, 'float64')
 
@@ -140,6 +152,16 @@ class PointSourcePointLens(pm.Model):
 
         return -0.5*T.log(2*np.pi*sig**2) - 0.5*(ln_t0 - mu)**2/sig**2
 
+
+    def prior_ln_tE(self, value):
+        ln_tE = T.cast(value, 'float64')
+
+        # Gaussian prior
+        mu = T.log(20)
+        sig = T.log(300)
+
+        return -0.5*T.log(2*np.pi*sig**2) - 0.5*(ln_tE - mu)**2/sig**2
+
     def prior_ln_u0(self, value):
         ln_u0 = T.cast(value, 'float64')
 
@@ -148,7 +170,7 @@ class PointSourcePointLens(pm.Model):
         sig = np.log(1.2)
 
         return -0.5*T.log(2*np.pi*sig**2) - 0.5*(ln_u0 - mu)**2/sig**2
-    
+
     def prior_ln_K(self, value):
         ln_K = T.cast(value, 'float64')
 
